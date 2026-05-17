@@ -19,7 +19,7 @@ loadEnv(__DIR__ . '/.env');
 
 $cloudName = getenv('CLOUDINARY_CLOUD_NAME');
 $uploadPreset = getenv('CLOUDINARY_UPLOAD_PRESET');
-$adminPassword = getenv('ADMIN_PASSWORD') ?: 'password'; // Pulls 'password' from your configuration
+$adminPassword = getenv('ADMIN_PASSWORD') ?: 'password';
 $uploadDir = 'uploads/';
 
 if (!file_exists($uploadDir)) {
@@ -29,12 +29,11 @@ if (!file_exists($uploadDir)) {
 $message = '';
 $messageType = '';
 
-// 2. HANDLE SECURE DELETE (Strict Admin-Only Gatekeeper)
+// 2. HANDLE SECURE DELETE
 if (isset($_GET['delete'])) {
     $fileToDelete = $uploadDir . basename($_GET['delete']);
     $providedPassword = $_GET['auth'] ?? '';
 
-    // Guard Clause: Block request instantly if tokens do not match
     if ($providedPassword !== $adminPassword) {
         header("Location: " . $_SERVER['PHP_SELF'] . "?status=unauthorized");
         exit();
@@ -147,7 +146,6 @@ function getUploadedFiles($dir) {
                         'date'         => date('d M, Y | H:i', filemtime($dir . $file))
                     ];
                 } else {
-                    // Backwards compatibility parsing engine
                     $underscorePos = strpos($file, '_');
                     $displayTitle = ($underscorePos !== false && $underscorePos < 12) ? substr($file, $underscorePos + 1) : $file;
                     $displayTitle = pathinfo($displayTitle, PATHINFO_FILENAME);
@@ -192,7 +190,7 @@ $uploadedFiles = getUploadedFiles($uploadDir);
         .upload-trigger-area:hover { border-color: var(--primary); background: #f0f7ff; }
         .custom-label { background: var(--primary); color: white; padding: 14px 28px; border-radius: 12px; cursor: pointer; font-weight: 700; display: inline-block; font-size: 0.95rem; box-shadow: 0 4px 12px rgba(0,98,255,0.2); }
         
-        /* Modal Window Styles */
+        /* Modal Style Settings */
         .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 1000; opacity: 0; pointer-events: none; transition: opacity 0.3s ease; }
         .modal-overlay.active { opacity: 1; pointer-events: auto; }
         .modal-content { background: #ffffff; width: 100%; max-width: 550px; padding: 30px; border-radius: 24px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); transform: scale(0.9); transition: transform 0.3s ease; box-sizing: border-box; }
@@ -208,13 +206,13 @@ $uploadedFiles = getUploadedFiles($uploadDir);
         
         .btn-push { background: var(--success); color: white; padding: 16px; border: none; border-radius: 12px; cursor: pointer; font-size: 1rem; font-weight: 800; width: 100%; transition: 0.2s; display: flex; align-items: center; justify-content: center; gap: 10px; }
 
-        /* Filtering UI Component */
+        /* Filtering UI */
         .search-box-container { margin-bottom: 20px; }
         .search-control { width: 100%; padding: 14px 20px; border: 2px solid #cbd5e0; border-radius: 14px; font-size: 0.95rem; box-sizing: border-box; font-family: inherit; transition: 0.2s; background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%23a0aec0' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'%3E%3C/circle%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'%3E%3C/line%3E%3C/svg%3E") no-repeat calc(100% - 20px) center; }
         
-        /* Responsive Table Architecture */
-        .table-wrapper { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 15px; }
-        table { width: 100%; border-collapse: separate; border-spacing: 0 8px; min-width: 650px; }
+        /* DESKTOP TABLE VIEW */
+        .table-wrapper { width: 100%; border-radius: 15px; }
+        table { width: 100%; border-collapse: separate; border-spacing: 0 8px; }
         th { padding: 12px; text-align: left; color: #64748b; font-size: 0.75rem; text-transform: uppercase; white-space: nowrap; }
         td { padding: 15px; background: #ffffff; border-top: 1px solid #f1f5f9; border-bottom: 1px solid #f1f5f9; font-size: 0.9rem; vertical-align: middle; }
         tr td:first-child { border-left: 1px solid #f1f5f9; border-radius: 15px 0 0 15px; font-weight: 800; color: #adb5bd; text-align: center; }
@@ -225,17 +223,47 @@ $uploadedFiles = getUploadedFiles($uploadDir);
         .tag-code { background: #fef3c7; color: #92400e; }
         .tag-dept { background: #f3e8ff; color: #6b21a8; }
 
-        .btn-dl { background: var(--success); color: white; text-decoration: none; padding: 8px 14px; border-radius: 8px; font-weight: 700; font-size: 0.75rem; display: inline-flex; align-items: center; white-space: nowrap; }
-        .btn-del { background: #fff1f0; border: 2px solid #ffa39e; padding: 8px; border-radius: 8px; cursor: pointer; border: none; display: flex; align-items: center; }
+        .btn-dl { background: var(--success); color: white; text-decoration: none; padding: 8px 14px; border-radius: 8px; font-weight: 700; font-size: 0.75rem; display: inline-flex; align-items: center; white-space: nowrap; justify-content: center; }
+        .btn-del { background: #fff1f0; border: 2px solid #ffa39e; padding: 8px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
 
         .spinner { width: 18px; height: 18px; border: 3px solid rgba(255,255,255,0.3); border-radius: 50%; border-top-color: #fff; animation: spin 1s infinite; display: none; }
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes pop { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
 
-        @media (max-width: 600px) {
+        /* MOBILE FLEX RESPONSIVE BREAKDOWN ENGINE */
+        @media (max-width: 768px) {
             .container { padding: 15px; }
             h1 { font-size: 1.5rem; }
             .form-grid { grid-template-columns: 1fr; gap: 10px; }
+            
+            /* Completely transform standard table layouts into structural block cards */
+            table, thead, tbody, th, td, tr { display: block; width: 100%; box-sizing: border-box; }
+            thead { display: none; } /* Hide headers entirely on mobile views */
+            
+            table { border-spacing: 0; }
+            
+            .resource-row { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px !important; padding: 15px; margin-bottom: 15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+            
+            td { padding: 0 !important; border: none !important; background: transparent !important; }
+            
+            /* Map the S/N counter as an incremental floating badge */
+            tr td:first-child { text-align: left; font-size: 0.8rem; color: #94a3b8; margin-bottom: 8px; }
+            tr td:first-child::before { content: "Item #"; }
+            
+            /* Center resource detail rows */
+            tr td:nth-child(2) { margin-bottom: 12px; }
+            
+            /* File size row wrapper spacing */
+            tr td:nth-child(3) { font-size: 0.8rem; margin-bottom: 15px; color: #4a5568; }
+            tr td:nth-child(3)::before { content: "File Size: "; font-weight: 600; color: #64748b; }
+            
+            /* Move action controls elegantly to the baseline profile layout */
+            tr td:last-child { display: flex !important; gap: 10px; justify-content: space-between !important; width: 100%; border-top: 1px solid #f1f5f9 !important; padding-top: 12px !important; }
+            
+            .btn-dl { flex: 1; padding: 12px; font-size: 0.85rem; }
+            .btn-del { width: 48px; height: 44px; }
+            
+            #noResultsRow { padding: 30px 10px !important; text-align: center; border: 1px dashed #cbd5e0 !important; border-radius: 16px; background: #fff !important; }
         }
     </style>
 </head>
@@ -251,14 +279,14 @@ $uploadedFiles = getUploadedFiles($uploadDir);
         <div id="alertBox" class="message <?= $messageType ?>"><?= $message ?></div>
     <?php endif; ?>
 
-    <!-- Document Input Selector UI Drop Box -->
+    <!-- Open Drop Upload Target -->
     <div class="upload-trigger-area">
         <input type="file" name="file" id="file-input" form="uploadForm" hidden required onchange="handleFileSelect(this)">
         <label for="file-input" class="custom-label">📂 Click here to Select File</label>
         <span id="trigger-file-name" style="display:block; margin-top:12px; font-weight:600; color:#64748b; font-size:0.9rem;">No resource attached yet</span>
     </div>
 
-    <!-- Modal Form Engine Window Overlay -->
+    <!-- Pop-up Dynamic Classification Panel -->
     <div id="uploadModal" class="modal-overlay">
         <div class="modal-content">
             <div class="modal-header">
@@ -298,13 +326,13 @@ $uploadedFiles = getUploadedFiles($uploadDir);
                 
                 <button type="submit" class="btn-push" id="submitBtn">
                     <div class="spinner" id="uploadSpinner"></div>
-                    <span id="btnText">🚀 DEPLOY TO ARCHIVE</span>
+                    <span id="btnText">UPLOAD MATERIAL</span>
                 </button>
             </form>
         </div>
     </div>
 
-    <!-- Client Search Filter Field Box -->
+    <!-- Live Filter Field -->
     <div class="search-box-container">
         <input type="text" id="searchInput" class="search-control" placeholder="Search by Course Title, Course Code, or Level..." onkeyup="filterResources()">
     </div>
@@ -322,20 +350,19 @@ $uploadedFiles = getUploadedFiles($uploadDir);
                     data-level="<?= htmlspecialchars(strtolower($f['level'])) ?>">
                     <td><?= $count++ ?></td>
                     <td>
-                        <span style="font-weight:800; color:#334155; font-size: 1.05rem;"><?= htmlspecialchars($f['course_title']) ?></span><br>
-                        <div style="margin: 6px 0;">
+                        <span style="font-weight:800; color:#334155; font-size: 1.05rem; display: block; line-height: 1.3;"><?= htmlspecialchars($f['course_title']) ?></span>
+                        <div style="margin: 8px 0 6px 0;">
                             <span class="meta-tag tag-code"><?= htmlspecialchars($f['course_code']) ?></span>
                             <span class="meta-tag tag-level"><?= htmlspecialchars($f['level']) ?> Lvl</span>
                             <span class="meta-tag tag-dept"><?= htmlspecialchars($f['dept']) ?></span>
                         </div>
-                        <small style="color:#94a3b8; font-weight: 500;">Added: <?= $f['date'] ?></small>
+                        <small style="color:#94a3b8; font-weight: 500; display: block; margin-top: 4px;">Added: <?= $f['date'] ?></small>
                     </td>
                     <td style="font-weight:700; color:#64748b;"><?= round($f['size']/1024, 2) ?> KB</td>
-                    <td style="display:flex; gap:8px; justify-content:flex-end; align-items: center;">
+                    <td>
                         <a href="uploads/<?= urlencode($f['raw_name']) ?>" class="btn-dl" download="<?= htmlspecialchars($f['course_title']) ?>" onclick="handleDownload(this)">
                             <span>DOWNLOAD</span>
                         </a>
-                        <!-- Authorized Delete Interceptor Trigger -->
                         <button class="btn-del" onclick="secureDelete('<?= urlencode($f['raw_name']) ?>')">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e03131" stroke-width="2.5"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                         </button>
@@ -351,7 +378,6 @@ $uploadedFiles = getUploadedFiles($uploadDir);
 </div>
 
 <script>
-    // Clean URL Parameter State Management Engine
     if (window.history.replaceState) {
         const url = new URL(window.location.href);
         url.searchParams.delete('status');
@@ -382,7 +408,6 @@ $uploadedFiles = getUploadedFiles($uploadDir);
         document.getElementById('trigger-file-name').textContent = "No resource attached yet";
     }
 
-    // Secure Verification Interceptor
     function secureDelete(fileName) {
         const password = prompt("🔒 Secure Authorization Required:\nEnter Admin Password to complete deletion:");
         if (password === null) return; 
@@ -395,7 +420,6 @@ $uploadedFiles = getUploadedFiles($uploadDir);
         window.location.href = `?delete=${fileName}&auth=${encodeURIComponent(password)}`;
     }
 
-    // Fixed Client-Side Multi-Criteria Filtering Loop Engine
     function filterResources() {
         const query = document.getElementById('searchInput').value.toLowerCase().trim();
         const rows = document.getElementsByClassName('resource-row');
@@ -404,7 +428,7 @@ $uploadedFiles = getUploadedFiles($uploadDir);
         for (let i = 0; i < rows.length; i++) {
             const title = rows[i].getAttribute('data-title');
             const code = rows[i].getAttribute('data-code');
-            const level = rows[i].getAttribute('data-level'); // Fixed 'i3' loop index reference completely
+            const level = rows[i].getAttribute('data-level');
 
             if (title.includes(query) || code.includes(query) || level.includes(query) || `${level} level`.includes(query)) {
                 rows[i].style.display = "";
