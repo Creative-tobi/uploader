@@ -35,16 +35,14 @@ if (isset($_GET['file_download'])) {
     $filePath = $uploadDir . basename($rawFileName);
 
     if (file_exists($filePath) && is_file($filePath)) {
-        // Parse metadata to extract clean course title for the user's download presentation
         $parts = explode('||', $rawFileName);
         if (count($parts) >= 5) {
-            $userFacingName = $parts[4]; // Title + original extension
+            $userFacingName = $parts[4]; 
         } else {
             $underscorePos = strpos($rawFileName, '_');
             $userFacingName = ($underscorePos !== false && $underscorePos < 12) ? substr($rawFileName, $underscorePos + 1) : $rawFileName;
         }
 
-        // Send explicit programmatic binary stream headers to force instant client download
         header('Content-Description: File Transfer');
         header('Content-Type: application/octet-stream');
         header('Content-Disposition: attachment; filename="' . str_replace('"', '_', $userFacingName) . '"');
@@ -53,7 +51,6 @@ if (isset($_GET['file_download'])) {
         header('Pragma: public');
         header('Content-Length: ' . filesize($filePath));
         
-        // Clear system buffers and read out raw binary payload
         if (ob_get_level()) ob_end_clean();
         flush();
         readfile($filePath);
@@ -109,7 +106,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['file'])) {
             $message = "⚠️ Access Denied: This exact course resource already exists.";
             $messageType = 'error';
         } else {
-            $timestamp = time();
+            $timestamp = time(); // Generates the permanent fixed timestamp
             $newFileName = "{$timestamp}||{$dept}||{$level}||{$courseCode}||{$courseTitle}.{$extension}";
             $destination = $uploadDir . $newFileName;
 
@@ -162,7 +159,7 @@ if (empty($message) && isset($_GET['status'])) {
     }
 }
 
-// 5. PARSE METADATA FROM DIRECTORY
+// 5. PARSE METADATA FROM DIRECTORY (Fixed Timestamp Logic Engine)
 function getUploadedFiles($dir) {
     $files = [];
     if (is_dir($dir)) {
@@ -173,36 +170,52 @@ function getUploadedFiles($dir) {
                 
                 if (count($parts) >= 5) {
                     $cleanTitle = pathinfo($parts[4], PATHINFO_FILENAME);
+                    
+                    // FIXED: Read the real creation time straight out of the filename string
+                    $realTimestamp = (int)$parts[0]; 
+                    
                     $files[] = [
                         'raw_name'     => $file,
-                        'timestamp'    => $parts[0],
+                        'timestamp'    => $realTimestamp,
                         'dept'         => $parts[1],
                         'level'        => $parts[2],
                         'course_code'  => $parts[3],
                         'course_title' => $cleanTitle,
                         'size'         => filesize($dir . $file),
-                        'date'         => date('d M, Y | H:i', filemtime($dir . $file))
+                        'date'         => date('d M, Y | H:i', $realTimestamp) // Decodes the fixed metadata date
                     ];
                 } else {
+                    // Backwards compatibility fallback for older uploads
                     $underscorePos = strpos($file, '_');
                     $displayTitle = ($underscorePos !== false && $underscorePos < 12) ? substr($file, $underscorePos + 1) : $file;
                     $displayTitle = pathinfo($displayTitle, PATHINFO_FILENAME);
 
+                    // Extract first timestamp pattern from legacy files if available
+                    $fallbackTimestamp = filemtime($dir . $file);
+                    if ($underscorePos !== false && $underscorePos < 12) {
+                        $potentialTimestamp = substr($file, 0, $underscorePos);
+                        if (is_numeric($potentialTimestamp)) {
+                            $fallbackTimestamp = (int)$potentialTimestamp;
+                        }
+                    }
+
                     $files[] = [
                         'raw_name'     => $file,
-                        'timestamp'    => filemtime($dir . $file),
+                        'timestamp'    => $fallbackTimestamp,
                         'dept'         => 'General Archive',
                         'level'        => 'N/A',
                         'course_code'  => 'LEGACY',
                         'course_title' => $displayTitle,
                         'size'         => filesize($dir . $file),
-                        'date'         => date('d M, Y | H:i', filemtime($dir . $file))
+                        'date'         => date('d M, Y | H:i', $fallbackTimestamp)
                     ];
                 }
             }
         }
     }
-    usort($files, function($a, $b) { return filemtime('uploads/'.$b['raw_name']) - filemtime('uploads/'.$a['raw_name']); });
+    
+    // Sort items chronologically by their embedded metadata timestamp, NOT the drive time
+    usort($files, function($a, $b) { return $b['timestamp'] - $a['timestamp']; });
     return $files;
 }
 $uploadedFiles = getUploadedFiles($uploadDir);
@@ -228,7 +241,7 @@ $uploadedFiles = getUploadedFiles($uploadDir);
         .upload-trigger-area:hover { border-color: var(--primary); background: #f0f7ff; }
         .custom-label { background: var(--primary); color: white; padding: 14px 28px; border-radius: 12px; cursor: pointer; font-weight: 700; display: inline-block; font-size: 0.95rem; box-shadow: 0 4px 12px rgba(0,98,255,0.2); }
         
-        /* Modal Style Settings */
+        /* Modal Engine Override */
         .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 1000; opacity: 0; pointer-events: none; transition: opacity 0.3s ease; }
         .modal-overlay.active { opacity: 1; pointer-events: auto; }
         .modal-content { background: #ffffff; width: 100%; max-width: 550px; padding: 30px; border-radius: 24px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); transform: scale(0.9); transition: transform 0.3s ease; box-sizing: border-box; }
@@ -244,12 +257,12 @@ $uploadedFiles = getUploadedFiles($uploadDir);
         
         .btn-push { background: var(--success); color: white; padding: 16px; border: none; border-radius: 12px; cursor: pointer; font-size: 1rem; font-weight: 800; width: 100%; transition: 0.2s; display: flex; align-items: center; justify-content: center; gap: 10px; }
 
-        /* Filtering UI Configuration */
+        /* Filter UI */
         .search-box-container { margin-bottom: 20px; }
         .search-control { width: 100%; padding: 14px 45px 14px 20px; border: 2px solid #cbd5e0; border-radius: 14px; font-size: 0.95rem; box-sizing: border-box; font-family: inherit; transition: 0.2s; background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%23a0aec0' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'%3E%3C/circle%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'%3E%3C/line%3E%3C/svg%3E") no-repeat calc(100% - 16px) center; background-size: 18px 18px; }
         .search-control:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 4px rgba(0,98,255,0.1); }
         
-        /* DESKTOP VIEWS STYLING RULES */
+        /* DESKTOP STYLING */
         .table-wrapper { width: 100%; border-radius: 15px; }
         table { width: 100%; border-collapse: separate; border-spacing: 0 8px; }
         th { padding: 12px; text-align: left; color: #64748b; font-size: 0.75rem; text-transform: uppercase; white-space: nowrap; }
@@ -272,7 +285,7 @@ $uploadedFiles = getUploadedFiles($uploadDir);
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes pop { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
 
-        /* ADVANCED FLEX MOBILE DISPLAY SPECIFICATION BREAKDOWN */
+        /* MOBILE RESPONSIVE LAYOUT CARDS */
         @media (max-width: 768px) {
             .container { padding: 15px; }
             h1 { font-size: 1.5rem; }
@@ -316,14 +329,13 @@ $uploadedFiles = getUploadedFiles($uploadDir);
         <div id="alertBox" class="message <?= $messageType ?>"><?= $message ?></div>
     <?php endif; ?>
 
-    <!-- Document Selection Target Trigger Box -->
     <div class="upload-trigger-area">
         <input type="file" name="file" id="file-input" form="uploadForm" hidden required onchange="handleFileSelect(this)">
         <label for="file-input" class="custom-label">📂 Click here to Select File</label>
         <span id="trigger-file-name" style="display:block; margin-top:12px; font-weight:600; color:#64748b; font-size:0.9rem;">No resource attached yet</span>
     </div>
 
-    <!-- Modal Form Component Overlay -->
+    <!-- Meta Classification Dialog Module Box -->
     <div id="uploadModal" class="modal-overlay">
         <div class="modal-content">
             <div class="modal-header">
@@ -363,13 +375,12 @@ $uploadedFiles = getUploadedFiles($uploadDir);
                 
                 <button type="submit" class="btn-push" id="submitBtn">
                     <div class="spinner" id="uploadSpinner"></div>
-                    <span id="btnText">UPLOAD MATERIAL</span>
+                    <span id="btnText">🚀 DEPLOY TO ARCHIVE</span>
                 </button>
             </form>
         </div>
     </div>
 
-    <!-- Unified Filter Field -->
     <div class="search-box-container">
         <input type="text" id="searchInput" class="search-control" placeholder="Search parameters......" onkeyup="filterResources()">
     </div>
@@ -398,7 +409,6 @@ $uploadedFiles = getUploadedFiles($uploadDir);
                     <td style="font-weight:700; color:#64748b;"><?= round($f['size']/1024, 2) ?> KB</td>
                     <td class="action-cell">
                         <div class="action-flex-container">
-                            <!-- UPGRADED DOWNLOAD TRIGGER ELEMENT PATH ROUTE LINK -->
                             <a href="?file_download=<?= urlencode($f['raw_name']) ?>" class="btn-dl" onclick="handleDownload(this)">
                                 <span>DOWNLOAD</span>
                             </a>
@@ -460,6 +470,7 @@ $uploadedFiles = getUploadedFiles($uploadDir);
         window.location.href = `?delete=${fileName}&auth=${encodeURIComponent(password)}`;
     }
 
+    // Client-side filtering mechanism
     function filterResources() {
         const query = document.getElementById('searchInput').value.toLowerCase().trim();
         const rows = document.getElementsByClassName('resource-row');
