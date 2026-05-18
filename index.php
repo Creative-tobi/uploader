@@ -42,7 +42,8 @@ if (isset($_GET['file_download'])) {
 
         // If it is a new file with 6 parts (has Cloudinary Public ID)
         if (count($parts) >= 6) {
-            $cloudinaryPublicId = trim($parts[5]); 
+            // Restore the forward slash for Cloudinary routing mapping lookup
+            $cloudinaryPublicId = str_replace('__', '/', trim($parts[5])); 
             
             // Build absolute direct download path
             $cloudinaryUrl = "https://res.cloudinary.com/{$cloudName}/raw/upload/v1/{$cloudinaryPublicId}?attachment=true";
@@ -90,7 +91,7 @@ if (isset($_GET['delete'])) {
     }
 }
 
-// 4. STRATEGIC CLOUD UPLOAD CONTROLLER (Fixed cURL Options Constants)
+// 4. STRATEGIC CLOUD UPLOAD CONTROLLER
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['file'])) {
     $file = $_FILES['file'];
     
@@ -121,17 +122,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['file'])) {
             $timestamp = time();
             $uniqueId = bin2hex(random_bytes(4));
             
-            // Explicit folder string path generation
-            $cloudinaryPublicId = "rcf_portal/rcf_" . $timestamp . "_" . $uniqueId . "." . $extension;
+            // Safe Cloudinary path inside the multipart boundary request body
+            $cloudPublicIdParam = "rcf_portal/rcf_" . $timestamp . "_" . $uniqueId;
 
-            // Execute the cURL request with fixed CURLOPT_URL constant mapping
+            // Execute the cURL request to Cloudinary API endpoints
             $ch = curl_init();
             curl_setopt($ch, CURLOPT_URL, "https://api.cloudinary.com/v1_1/{$cloudName}/raw/upload");
             curl_setopt($ch, CURLOPT_POST, true);
             curl_setopt($ch, CURLOPT_POSTFIELDS, [
                 'file' => curl_file_create($file['tmp_name'], $file['type'], $originalName),
                 'upload_preset' => $uploadPreset,
-                'public_id' => "rcf_portal/rcf_" . $timestamp . "_" . $uniqueId
+                'public_id' => $cloudPublicIdParam
             ]);
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
             
@@ -141,8 +142,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['file'])) {
             $response = json_decode($result_json, true);
 
             if ($result_json && isset($response['secure_url'])) {
+                // Replace the slash with double underscores for safe flat file creation on the drive
+                $safeCloudinaryIdToken = "rcf_portal__rcf_" . $timestamp . "_" . $uniqueId . "." . $extension;
+                
                 // Assemble file schema metadata tracker mapping string
-                $finalFileName = "{$timestamp}||{$dept}||{$level}||{$courseCode}||{$courseTitle}.{$extension}||" . "rcf_portal/rcf_" . $timestamp . "_" . $uniqueId . "." . $extension;
+                $finalFileName = "{$timestamp}||{$dept}||{$level}||{$courseCode}||{$courseTitle}.{$extension}||" . $safeCloudinaryIdToken;
                 file_put_contents($uploadDir . $finalFileName, "CLOUDINARY_TRACKED");
 
                 header("Location: " . $_SERVER['PHP_SELF'] . "?status=success&name=" . urlencode($courseTitle));
@@ -279,8 +283,6 @@ $uploadedFiles = getUploadedFiles($uploadDir);
         @media (max-width: 768px) {
             .container { padding: 15px; }
             h1 { font-size: 1.5rem; }
-            .form-grid { grid-template-columns: 1fr; gap: 10px; }
-            .search-control { padding: 14px 40px 14px 15px; font-size: 0.9rem; background-position: calc(100% - 12px) center; }
             
             table, thead, tbody, th, td, tr { display: block; width: 100%; box-sizing: border-box; }
             thead { display: none; } 
