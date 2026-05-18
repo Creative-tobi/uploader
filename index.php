@@ -29,30 +29,42 @@ if (!file_exists($uploadDir)) {
 $message = '';
 $messageType = '';
 
-// 1B. UPGRADED DOWNLOAD INTERCEPTOR ROUTE
+// 2. TRUE CLOUD DOWNLOAD ROUTE (Dynamic Edge Resolver)
 if (isset($_GET['file_download'])) {
     $rawFileName = urldecode($_GET['file_download']);
-    $filePath = $uploadDir . basename($rawFileName);
+    $parts = explode('||', $rawFileName);
 
-    if (file_exists($filePath) && is_file($filePath)) {
-        $parts = explode('||', $rawFileName);
-        if (count($parts) >= 5) {
-            $userFacingName = $parts[4]; 
-        } else {
-            $underscorePos = strpos($rawFileName, '_');
-            $userFacingName = ($underscorePos !== false && $underscorePos < 12) ? substr($rawFileName, $underscorePos + 1) : $rawFileName;
+    if (count($parts) >= 5) {
+        $courseCode = $parts[3];
+        $courseTitle = pathinfo($parts[4], PATHINFO_FILENAME);
+        $extension = pathinfo($rawFileName, PATHINFO_EXTENSION);
+        $downloadDisplayTitle = "{$courseCode} - {$courseTitle}.{$extension}";
+
+        // If it is a new file with 6 parts (has Cloudinary Public ID)
+        if (count($parts) >= 6) {
+            $cloudinaryPublicId = trim($parts[5]); 
+            
+            // Build absolute direct download path
+            $cloudinaryUrl = "https://res.cloudinary.com/{$cloudName}/raw/upload/v1/{$cloudinaryPublicId}?attachment=true";
+            
+            // Verification step: verify if asset exists on cloud network before redirecting
+            $headers = @get_headers($cloudinaryUrl);
+            if ($headers && strpos($headers[0], '200') !== false) {
+                header("Location: " . $cloudinaryUrl);
+                exit();
+            }
         }
-
+    }
+    
+    // Fallback: If cloud verification fails or it's a legacy local file, stream from Render
+    $filePath = $uploadDir . basename($rawFileName);
+    if (file_exists($filePath) && is_file($filePath)) {
+        $parts = explode('||', basename($filePath));
+        $userFacingName = (count($parts) >= 5) ? "{$parts[3]} - " . pathinfo($parts[4], PATHINFO_FILENAME) . "." . pathinfo($filePath, PATHINFO_EXTENSION) : basename($filePath);
+        
         header('Content-Description: File Transfer');
         header('Content-Type: application/octet-stream');
         header('Content-Disposition: attachment; filename="' . str_replace('"', '_', $userFacingName) . '"');
-        header('Expires: 0');
-        header('Cache-Control: must-revalidate');
-        header('Pragma: public');
-        header('Content-Length: ' . filesize($filePath));
-        
-        if (ob_get_level()) ob_end_clean();
-        flush();
         readfile($filePath);
         exit();
     } else {
@@ -61,7 +73,7 @@ if (isset($_GET['file_download'])) {
     }
 }
 
-// 2. HANDLE SECURE DELETE
+// 3. HANDLE SECURE DELETE
 if (isset($_GET['delete'])) {
     $fileToDelete = $uploadDir . basename($_GET['delete']);
     $providedPassword = $_GET['auth'] ?? '';
@@ -78,7 +90,7 @@ if (isset($_GET['delete'])) {
     }
 }
 
-// 3. PERSISTENT UPLOAD LOGIC
+// 4. STRATEGIC CLOUD UPLOAD CONTROLLER (Fixed cURL Options Constants)
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['file'])) {
     $file = $_FILES['file'];
     
@@ -89,7 +101,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['file'])) {
     
     if ($file['error'] === UPLOAD_ERR_OK) {
         $originalName = preg_replace('/[^a-zA-Z0-9._-]/', '', $file['name']);
-        $extension = pathinfo($originalName, PATHINFO_EXTENSION);
+        $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
         
         $isDuplicate = false;
         if (is_dir($uploadDir)) {
@@ -106,38 +118,38 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['file'])) {
             $message = "⚠️ Access Denied: This exact course resource already exists.";
             $messageType = 'error';
         } else {
-            $timestamp = time(); // Generates the permanent fixed timestamp
-            $newFileName = "{$timestamp}||{$dept}||{$level}||{$courseCode}||{$courseTitle}.{$extension}";
-            $destination = $uploadDir . $newFileName;
+            $timestamp = time();
+            $uniqueId = bin2hex(random_bytes(4));
+            
+            // Explicit folder string path generation
+            $cloudinaryPublicId = "rcf_portal/rcf_" . $timestamp . "_" . $uniqueId . "." . $extension;
 
-            if (move_uploaded_file($file['tmp_name'], $destination)) {
-                $boundary = "---------------------------" . microtime(true);
-                $content = "--$boundary\r\n" .
-                           "Content-Disposition: form-data; name=\"upload_preset\"\r\n\r\n" .
-                           "$uploadPreset\r\n" .
-                           "--$boundary\r\n" .
-                           "Content-Disposition: form-data; name=\"file\"; filename=\"$newFileName\"\r\n" .
-                           "Content-Type: " . $file['type'] . "\r\n\r\n" .
-                           file_get_contents($destination) . "\r\n" .
-                           "--$boundary--\r\n";
+            // Execute the cURL request with fixed CURLOPT_URL constant mapping
+            $ch = curl_init();
+            curl_setopt($ch, CURLOPT_URL, "https://api.cloudinary.com/v1_1/{$cloudName}/raw/upload");
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, [
+                'file' => curl_file_create($file['tmp_name'], $file['type'], $originalName),
+                'upload_preset' => $uploadPreset,
+                'public_id' => "rcf_portal/rcf_" . $timestamp . "_" . $uniqueId
+            ]);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            
+            $result_json = curl_exec($ch);
+            curl_close($ch);
+            
+            $response = json_decode($result_json, true);
 
-                $options = ['http' => [
-                    'header' => "Content-Type: multipart/form-data; boundary=$boundary\r\n",
-                    'method' => 'POST',
-                    'content' => $content,
-                    'ignore_errors' => true
-                ]];
+            if ($result_json && isset($response['secure_url'])) {
+                // Assemble file schema metadata tracker mapping string
+                $finalFileName = "{$timestamp}||{$dept}||{$level}||{$courseCode}||{$courseTitle}.{$extension}||" . "rcf_portal/rcf_" . $timestamp . "_" . $uniqueId . "." . $extension;
+                file_put_contents($uploadDir . $finalFileName, "CLOUDINARY_TRACKED");
 
-                $context = stream_context_create($options);
-                $result_json = file_get_contents("https://api.cloudinary.com/v1_1/$cloudName/auto/upload", false, $context);
-                
-                if ($result_json) {
-                    header("Location: " . $_SERVER['PHP_SELF'] . "?status=success&name=" . urlencode($courseTitle));
-                    exit();
-                } else {
-                    $message = "Cloud Sync Failed, but local catalog saved.";
-                    $messageType = 'error';
-                }
+                header("Location: " . $_SERVER['PHP_SELF'] . "?status=success&name=" . urlencode($courseTitle));
+                exit();
+            } else {
+                $message = "❌ Cloud API Transmission Failed. Check your Cloudinary parameters.";
+                $messageType = 'error';
             }
         }
     }
@@ -145,21 +157,21 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_FILES['file'])) {
 
 if (empty($message) && isset($_GET['status'])) {
     if ($_GET['status'] == 'success') {
-        $message = "🚀 [" . htmlspecialchars($_GET['name'] ?? 'Resource') . "] Uploaded & Secured!";
+        $message = "🚀 [" . htmlspecialchars($_GET['name'] ?? 'Resource') . "] Uploaded & Secured to Cloud Storage!";
         $messageType = 'success';
     } elseif ($_GET['status'] == 'deleted') {
-        $message = "🗑️ Record Deleted Successfully.";
+        $message = "🗑️ Record Removed Successfully.";
         $messageType = 'error';
     } elseif ($_GET['status'] == 'unauthorized') {
         $message = "❌ Action Denied: Invalid Admin Credentials.";
         $messageType = 'error';
     } elseif ($_GET['status'] == 'not_found') {
-        $message = "🔍 Error: The requested file could not be located on the server.";
+        $message = "🔍 Error: File asset could not be verified on Cloud servers.";
         $messageType = 'error';
     }
 }
 
-// 5. PARSE METADATA FROM DIRECTORY (Fixed Timestamp Logic Engine)
+// 5. PARSE METADATA REFERENCE LINKS FROM DIRECTORY
 function getUploadedFiles($dir) {
     $files = [];
     if (is_dir($dir)) {
@@ -170,10 +182,8 @@ function getUploadedFiles($dir) {
                 
                 if (count($parts) >= 5) {
                     $cleanTitle = pathinfo($parts[4], PATHINFO_FILENAME);
-                    
-                    // FIXED: Read the real creation time straight out of the filename string
                     $realTimestamp = (int)$parts[0]; 
-                    
+
                     $files[] = [
                         'raw_name'     => $file,
                         'timestamp'    => $realTimestamp,
@@ -181,23 +191,14 @@ function getUploadedFiles($dir) {
                         'level'        => $parts[2],
                         'course_code'  => $parts[3],
                         'course_title' => $cleanTitle,
-                        'size'         => filesize($dir . $file),
-                        'date'         => date('d M, Y | H:i', $realTimestamp) // Decodes the fixed metadata date
+                        'size'         => file_exists($dir . $file) ? filesize($dir . $file) : 1024,
+                        'date'         => date('d M, Y | H:i', $realTimestamp)
                     ];
                 } else {
-                    // Backwards compatibility fallback for older uploads
                     $underscorePos = strpos($file, '_');
                     $displayTitle = ($underscorePos !== false && $underscorePos < 12) ? substr($file, $underscorePos + 1) : $file;
                     $displayTitle = pathinfo($displayTitle, PATHINFO_FILENAME);
-
-                    // Extract first timestamp pattern from legacy files if available
                     $fallbackTimestamp = filemtime($dir . $file);
-                    if ($underscorePos !== false && $underscorePos < 12) {
-                        $potentialTimestamp = substr($file, 0, $underscorePos);
-                        if (is_numeric($potentialTimestamp)) {
-                            $fallbackTimestamp = (int)$potentialTimestamp;
-                        }
-                    }
 
                     $files[] = [
                         'raw_name'     => $file,
@@ -213,8 +214,6 @@ function getUploadedFiles($dir) {
             }
         }
     }
-    
-    // Sort items chronologically by their embedded metadata timestamp, NOT the drive time
     usort($files, function($a, $b) { return $b['timestamp'] - $a['timestamp']; });
     return $files;
 }
@@ -241,7 +240,6 @@ $uploadedFiles = getUploadedFiles($uploadDir);
         .upload-trigger-area:hover { border-color: var(--primary); background: #f0f7ff; }
         .custom-label { background: var(--primary); color: white; padding: 14px 28px; border-radius: 12px; cursor: pointer; font-weight: 700; display: inline-block; font-size: 0.95rem; box-shadow: 0 4px 12px rgba(0,98,255,0.2); }
         
-        /* Modal Engine Override */
         .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 1000; opacity: 0; pointer-events: none; transition: opacity 0.3s ease; }
         .modal-overlay.active { opacity: 1; pointer-events: auto; }
         .modal-content { background: #ffffff; width: 100%; max-width: 550px; padding: 30px; border-radius: 24px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); transform: scale(0.9); transition: transform 0.3s ease; box-sizing: border-box; }
@@ -257,12 +255,9 @@ $uploadedFiles = getUploadedFiles($uploadDir);
         
         .btn-push { background: var(--success); color: white; padding: 16px; border: none; border-radius: 12px; cursor: pointer; font-size: 1rem; font-weight: 800; width: 100%; transition: 0.2s; display: flex; align-items: center; justify-content: center; gap: 10px; }
 
-        /* Filter UI */
         .search-box-container { margin-bottom: 20px; }
         .search-control { width: 100%; padding: 14px 45px 14px 20px; border: 2px solid #cbd5e0; border-radius: 14px; font-size: 0.95rem; box-sizing: border-box; font-family: inherit; transition: 0.2s; background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%23a0aec0' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'%3E%3C/circle%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'%3E%3C/line%3E%3C/svg%3E") no-repeat calc(100% - 16px) center; background-size: 18px 18px; }
-        .search-control:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 4px rgba(0,98,255,0.1); }
         
-        /* DESKTOP STYLING */
         .table-wrapper { width: 100%; border-radius: 15px; }
         table { width: 100%; border-collapse: separate; border-spacing: 0 8px; }
         th { padding: 12px; text-align: left; color: #64748b; font-size: 0.75rem; text-transform: uppercase; white-space: nowrap; }
@@ -281,11 +276,6 @@ $uploadedFiles = getUploadedFiles($uploadDir);
         .btn-dl { background: var(--success); color: white; text-decoration: none; padding: 8px 14px; border-radius: 8px; font-weight: 700; font-size: 0.75rem; display: inline-flex; align-items: center; white-space: nowrap; justify-content: center; }
         .btn-del { background: #fff1f0; border: 2px solid #ffa39e; padding: 8px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; border: none; }
 
-        .spinner { width: 18px; height: 18px; border: 3px solid rgba(255,255,255,0.3); border-radius: 50%; border-top-color: #fff; animation: spin 1s infinite; display: none; }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        @keyframes pop { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
-
-        /* MOBILE RESPONSIVE LAYOUT CARDS */
         @media (max-width: 768px) {
             .container { padding: 15px; }
             h1 { font-size: 1.5rem; }
@@ -303,9 +293,7 @@ $uploadedFiles = getUploadedFiles($uploadDir);
             tr td:first-child::before { content: "Item #"; }
             
             tr td:nth-child(2) { margin-bottom: 12px; }
-            
-            tr td:nth-child(3) { font-size: 0.8rem; margin-bottom: 15px; color: #4a5568; }
-            tr td:nth-child(3)::before { content: "File Size: "; font-weight: 600; color: #64748b; }
+            tr td:nth-child(3) { display: none; }
             
             .action-cell { display: block !important; width: 100%; }
             .action-flex-container { display: flex !important; gap: 10px; justify-content: space-between !important; width: 100%; border-top: 1px solid #f1f5f9 !important; padding-top: 12px !important; }
@@ -335,7 +323,6 @@ $uploadedFiles = getUploadedFiles($uploadDir);
         <span id="trigger-file-name" style="display:block; margin-top:12px; font-weight:600; color:#64748b; font-size:0.9rem;">No resource attached yet</span>
     </div>
 
-    <!-- Meta Classification Dialog Module Box -->
     <div id="uploadModal" class="modal-overlay">
         <div class="modal-content">
             <div class="modal-header">
@@ -374,8 +361,7 @@ $uploadedFiles = getUploadedFiles($uploadDir);
                 </div>
                 
                 <button type="submit" class="btn-push" id="submitBtn">
-                    <div class="spinner" id="uploadSpinner"></div>
-                    <span id="btnText">🚀 DEPLOY TO ARCHIVE</span>
+                    <span id="btnText">🚀 DEPLOY TO CLOUD ARCHIVE</span>
                 </button>
             </form>
         </div>
@@ -398,7 +384,7 @@ $uploadedFiles = getUploadedFiles($uploadDir);
                     data-level="<?= htmlspecialchars(strtolower($f['level'])) ?>">
                     <td><?= $count++ ?></td>
                     <td>
-                        <span style="font-weight:800; color:#334155; font-size: 1.05rem; display: block; line-height: 1.3;"><?= htmlspecialchars($f['course_title']) ?></span>
+                        <span style="font-weight:800; color:#334155; font-size: 1.05rem; display: block; line-height: 1.3; text-transform: capitalize;"><?= htmlspecialchars($f['course_title']) ?></span>
                         <div style="margin: 8px 0 6px 0;">
                             <span class="meta-tag tag-code"><?= htmlspecialchars($f['course_code']) ?></span>
                             <span class="meta-tag tag-level"><?= htmlspecialchars($f['level']) ?> Lvl</span>
@@ -470,7 +456,6 @@ $uploadedFiles = getUploadedFiles($uploadDir);
         window.location.href = `?delete=${fileName}&auth=${encodeURIComponent(password)}`;
     }
 
-    // Client-side filtering mechanism
     function filterResources() {
         const query = document.getElementById('searchInput').value.toLowerCase().trim();
         const rows = document.getElementsByClassName('resource-row');
@@ -492,20 +477,14 @@ $uploadedFiles = getUploadedFiles($uploadDir);
         document.getElementById('noResultsRow').style.display = (visibleCount === 0) ? "" : "none";
     }
 
-    document.getElementById('uploadForm').onsubmit = function() {
-        document.getElementById('submitBtn').disabled = true;
-        document.getElementById('uploadSpinner').style.display = 'block';
-        document.getElementById('btnText').innerText = 'Archiving File...';
-    };
-
     function handleDownload(link) {
         const originalText = link.innerHTML;
-        link.innerHTML = '<span>WAIT...</span>';
+        link.innerHTML = '<span>FETCHING...</span>';
         link.style.pointerEvents = 'none';
         setTimeout(() => {
             link.innerHTML = originalText;
             link.style.pointerEvents = 'auto';
-        }, 4000);
+        }, 3000);
     }
 </script>
 
